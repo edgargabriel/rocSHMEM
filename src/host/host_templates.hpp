@@ -57,6 +57,10 @@ __host__ void HostInterface::put_nbi(T* dest, const T* source, size_t nelems,
 
 template <typename T>
 __host__ T HostInterface::g(const T* source, int pe, WindowInfo* window_info) {
+  WindowInfoMPI* window_info_mpi = dynamic_cast<WindowInfoMPI*>(window_info);
+  if (!window_info_mpi) {
+    abort();
+  }
   DPRINTF("Function: host_g\n");
 
   T ret{};
@@ -69,7 +73,7 @@ __host__ T HostInterface::g(const T* source, int pe, WindowInfo* window_info) {
    */
   getmem_nbi(&ret, source, sizeof(T), pe, window_info);
 
-  MPI_Win_flush_local(pe, window_info->get_win());
+  MPI_Win_flush_local(pe, window_info_mpi->get_win());
 
   return ret;
 }
@@ -288,6 +292,11 @@ __host__ void HostInterface::amo_cas(void* dst, T value, T cond, int pe,
 template <typename T>
 __host__ T HostInterface::amo_fetch_add(void* dst, T value, int pe,
                                         WindowInfo* window_info) {
+  WindowInfoMPI* window_info_mpi = dynamic_cast<WindowInfoMPI*>(window_info);
+  if (!window_info_mpi) {
+    abort();
+  }
+
   /* Calculate offset of remote dest from base address of window */
   MPI_Aint offset{
       compute_offset(dst, window_info->get_start(), window_info->get_end())};
@@ -300,7 +309,7 @@ __host__ T HostInterface::amo_fetch_add(void* dst, T value, int pe,
 
   /* Offload remote fetch and op operation to MPI */
   T ret{};
-  MPI_Win win{window_info->get_win()};
+  MPI_Win win{window_info_mpi->get_win()};
   MPI_Datatype mpi_type{get_mpi_type<T>()};
   MPI_Fetch_and_op(&value, &ret, mpi_type, pe, offset, MPI_SUM, win);
 
@@ -312,6 +321,11 @@ __host__ T HostInterface::amo_fetch_add(void* dst, T value, int pe,
 template <typename T>
 __host__ T HostInterface::amo_fetch_cas(void* dst, T value, T cond, int pe,
                                         WindowInfo* window_info) {
+  WindowInfoMPI* window_info_mpi = dynamic_cast<WindowInfoMPI*>(window_info);
+  if (!window_info_mpi) {
+    abort();
+  }
+
   /* Calculate offset of remote dest from base address of window */
   MPI_Aint offset{
       compute_offset(dst, window_info->get_start(), window_info->get_end())};
@@ -324,7 +338,7 @@ __host__ T HostInterface::amo_fetch_cas(void* dst, T value, T cond, int pe,
 
   /* Offload remote compare and swap operation to MPI */
   T ret{};
-  MPI_Win win{window_info->get_win()};
+  MPI_Win win{window_info_mpi->get_win()};
   MPI_Datatype mpi_type{get_mpi_type<T>()};
   MPI_Compare_and_swap(&value, &cond, &ret, mpi_type, pe, offset, win);
 
@@ -451,6 +465,10 @@ __host__ inline int HostInterface::test_and_compare(MPI_Aint offset,
 template <typename T>
 __host__ void HostInterface::wait_until(T *ivars, int cmp, T val,
                                         WindowInfo* window_info) {
+  WindowInfoMPI* window_info_mpi = dynamic_cast<WindowInfoMPI*>(window_info);
+  if (!window_info_mpi) {
+    abort();
+  }
   DPRINTF("Function: host_wait_until\n");
 
   /*
@@ -460,7 +478,7 @@ __host__ void HostInterface::wait_until(T *ivars, int cmp, T val,
       compute_offset(ivars, window_info->get_start(), window_info->get_end())};
 
   MPI_Datatype mpi_type{get_mpi_type<T>()};
-  MPI_Win win{window_info->get_win()};
+  MPI_Win win{window_info_mpi->get_win()};
 
   /*
    * Continuously read the ivars atomically until it satisfies the condition
@@ -630,6 +648,10 @@ __host__ size_t HostInterface::wait_until_some_vector(T* ivars, size_t nelems,
 template <typename T>
 __host__ int HostInterface::test(T* ivars, int cmp, T val,
                                  WindowInfo* window_info) {
+  WindowInfoMPI* window_info_mpi = dynamic_cast<WindowInfoMPI*>(window_info);
+  if (!window_info_mpi) {
+    abort();
+  }
   DPRINTF("Function: host_test\n");
 
   /*
@@ -640,7 +662,7 @@ __host__ int HostInterface::test(T* ivars, int cmp, T val,
 
   MPI_Datatype mpi_type{get_mpi_type<T>()};
 
-  return test_and_compare(offset, mpi_type, cmp, val, window_info->get_win());
+  return test_and_compare(offset, mpi_type, cmp, val, window_info_mpi->get_win());
 }
 
 }  // namespace rocshmem
