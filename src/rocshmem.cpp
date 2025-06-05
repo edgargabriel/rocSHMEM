@@ -331,10 +331,12 @@ rocshmem_ctx_t ROCSHMEM_HOST_CTX_DEFAULT;
   backend->~Backend();
   CHECK_HIP(hipHostFree(backend));
 
+  if (bootstr == nullptr)
+    delete MPIInitSingleton::GetInstance();
+
   if (bootstr != nullptr)
     delete bootstr;
 
-  delete MPIInitSingleton::GetInstance();
 }
 
 __host__ void rocshmem_query_thread(int *provided) {
