@@ -168,10 +168,23 @@ __device__ void gpu_dprintf(const char* fmt, const Args&... args) {
   }
 }
 
+#define USE_FLOAT_FOUR 1
+#define UNROLL_FOUR 1
+
+#if defined(UNROLL_TWO)
+#define OPSIZE 32
+#elif defined (UNROLL_FOUR)
+#define OPSIZE 64
+#else
+// assuming USE_FLOAT_FOUR is not defined in this case
+#define OPSIZE 8
+#endif
+
 __device__ __forceinline__ void memcpy(void* dst, void* src, size_t size) {
   uint8_t* dst_bytes{static_cast<uint8_t*>(dst)};
   uint8_t* src_bytes{static_cast<uint8_t*>(src)};
 
+#ifdef ORIG
   for (size_t i = 8; i > 1; i >>= 1) {
     while (size >= i) {
       store_asm(src_bytes, dst_bytes, i);
@@ -184,6 +197,79 @@ __device__ __forceinline__ void memcpy(void* dst, void* src, size_t size) {
   if (size == 1) {
     *dst_bytes = *src_bytes;
   }
+#else
+
+  if (size >= OPSIZE) {
+    float4* dst_f4{static_cast<float4*>(dst)};
+    float4* src_f4{static_cast<float4*>(src)};
+
+    while (size > 0) {
+      //__builtin_nontemporal_store(src_f4->x, &(dst_f4->x));
+      //__builtin_nontemporal_store(src_f4->y, &(dst_f4->y));
+      //__builtin_nontemporal_store(src_f4->z, &(dst_f4->z));
+      //__builtin_nontemporal_store(src_f4->w, &(dst_f4->w));
+      dst_f4->x = __builtin_nontemporal_load(&(src_f4->x));
+      dst_f4->y = __builtin_nontemporal_load(&(src_f4->y));
+      dst_f4->z = __builtin_nontemporal_load(&(src_f4->z));
+      dst_f4->w = __builtin_nontemporal_load(&(src_f4->w));
+      src_f4++;
+      dst_f4++;
+      size -= 16;
+
+#if defined(USE_UNROLL_TWO) || defined(USE_UNROLL_FOUR)
+      //__builtin_nontemporal_store(src_f4->x, &(dst_f4->x));
+      //__builtin_nontemporal_store(src_f4->y, &(dst_f4->y));
+      //__builtin_nontemporal_store(src_f4->z, &(dst_f4->z));
+      //__builtin_nontemporal_store(src_f4->w, &(dst_f4->w));
+      dst_f4->x = __builtin_nontemporal_load(&(src_f4->x));
+      dst_f4->y = __builtin_nontemporal_load(&(src_f4->y));
+      dst_f4->z = __builtin_nontemporal_load(&(src_f4->z));
+      dst_f4->w = __builtin_nontemporal_load(&(src_f4->w));
+      src_f4++;
+      dst_f4++;
+      size -= 16;
+#endif
+
+#if defined(USE_UNROLL_FOUR)
+      //__builtin_nontemporal_store(src_f4->x, &(dst_f4->x));
+      //__builtin_nontemporal_store(src_f4->y, &(dst_f4->y));
+      //__builtin_nontemporal_store(src_f4->z, &(dst_f4->z));
+      //__builtin_nontemporal_store(src_f4->w, &(dst_f4->w));
+      dst_f4->x = __builtin_nontemporal_load(&(src_f4->x));
+      dst_f4->y = __builtin_nontemporal_load(&(src_f4->y));
+      dst_f4->z = __builtin_nontemporal_load(&(src_f4->z));
+      dst_f4->w = __builtin_nontemporal_load(&(src_f4->w));
+      src_f4++;
+      dst_f4++;
+      size -= 16;
+
+      //__builtin_nontemporal_store(src_f4->x, &(dst_f4->x));
+      //__builtin_nontemporal_store(src_f4->y, &(dst_f4->y));
+      //__builtin_nontemporal_store(src_f4->z, &(dst_f4->z));
+      //__builtin_nontemporal_store(src_f4->w, &(dst_f4->w));
+      dst_f4->x = __builtin_nontemporal_load(&(src_f4->x));
+      dst_f4->y = __builtin_nontemporal_load(&(src_f4->y));
+      dst_f4->z = __builtin_nontemporal_load(&(src_f4->z));
+      dst_f4->w = __builtin_nontemporal_load(&(src_f4->w));
+      src_f4++;
+      dst_f4++;
+      size -= 16;
+#endif
+    }
+  } else  {
+    for (size_t i = 8; i > 1; i >>= 1) {
+      while (size >= i) {
+	store_asm(src_bytes, dst_bytes, i);
+	src_bytes += i;
+	dst_bytes += i;
+	size -= i;
+      }
+    }
+    if (size == 1) {
+      *dst_bytes = *src_bytes;
+    }
+  }
+#endif
 }
 
 __device__ __forceinline__ void memcpy_wg(void* dst, void* src, size_t size) {
@@ -191,37 +277,98 @@ __device__ __forceinline__ void memcpy_wg(void* dst, void* src, size_t size) {
   int block_size{get_flat_block_size()};
 
   int cpy_size{};
-  uint8_t* dst_bytes{nullptr};
   uint8_t* dst_def{nullptr};
-  uint8_t* src_bytes{nullptr};
   uint8_t* src_def{nullptr};
+#if defined(USE_FLOAT_FOUR)
+  float4* src_bytes{nullptr};
+  float4* dst_bytes{nullptr};
+#else
+  uint8_t* src_bytes{nullptr};
+  uint8_t* dst_bytes{nullptr};
+#endif
 
   dst_def = reinterpret_cast<uint8_t*>(dst);
   src_def = reinterpret_cast<uint8_t*>(src);
-  dst_bytes = dst_def;
-  src_bytes = src_def;
 
-  for (int j{8}; j > 1; j >>= 1) {
-    cpy_size = size / j;
-    for (int i{thread_id}; i < cpy_size; i += block_size) {
-      dst_bytes = dst_def;
-      src_bytes = src_def;
+  if (size > OPSIZE * block_size) {
+    for (int j{OPSIZE}; j > 1; j >>= 1) {
+      cpy_size = size / j;
+      for (int i{thread_id}; i < cpy_size; i += block_size) {
+#if defined(USE_FLOAT_FOUR)
+	dst_bytes = reinterpret_cast<float4*>(dst_def + i*j);
+	src_bytes = reinterpret_cast<float4*>(src_def + i*j);
 
-      src_bytes += i * j;
-      dst_bytes += i * j;
+	//__builtin_nontemporal_store(src_bytes->x, &dst_bytes->x);
+	//__builtin_nontemporal_store(src_bytes->y, &dst_bytes->y);
+	//__builtin_nontemporal_store(src_bytes->z, &dst_bytes->z);
+	//__builtin_nontemporal_store(src_bytes->w, &dst_bytes->w);
+	dst_bytes->x = __builtin_nontemporal_load(&(src_bytes->x));
+	dst_bytes->y = __builtin_nontemporal_load(&(src_bytes->y));
+	dst_bytes->z = __builtin_nontemporal_load(&(src_bytes->z));
+	dst_bytes->w = __builtin_nontemporal_load(&(src_bytes->w));
+#else
+	dst_bytes = dst_def + i*j;
+	src_bytes = src_def + i*j;
 
-      store_asm(src_bytes, dst_bytes, j);
+	store_asm(src_bytes, dst_bytes, j);
+#endif
+
+#if defined(USE_FLOAT_FOUR) && (defined(UNROLL_TWO) || defined(UNROLL_FOUR))
+	dst_bytes++;
+	src_bytes++;
+	//__builtin_nontemporal_store(src_bytes->x, &dst_bytes->x);
+	//__builtin_nontemporal_store(src_bytes->y, &dst_bytes->y);
+	//__builtin_nontemporal_store(src_bytes->z, &dst_bytes->z);
+	//__builtin_nontemporal_store(src_bytes->w, &dst_bytes->w);
+	dst_bytes->x = __builtin_nontemporal_load(&(src_bytes->x));
+	dst_bytes->y = __builtin_nontemporal_load(&(src_bytes->y));
+	dst_bytes->z = __builtin_nontemporal_load(&(src_bytes->z));
+	dst_bytes->w = __builtin_nontemporal_load(&(src_bytes->w));
+#endif
+
+#if defined(USE_FLOAT_FOUR) && defined(UNROLL_FOUR)
+	dst_bytes++;
+	src_bytes++;
+	//__builtin_nontemporal_store(src_bytes->x, &dst_bytes->x);
+	//__builtin_nontemporal_store(src_bytes->y, &dst_bytes->y);
+	//__builtin_nontemporal_store(src_bytes->z, &dst_bytes->z);
+	//__builtin_nontemporal_store(src_bytes->w, &dst_bytes->w);
+	dst_bytes->x = __builtin_nontemporal_load(&(src_bytes->x));
+	dst_bytes->y = __builtin_nontemporal_load(&(src_bytes->y));
+	dst_bytes->z = __builtin_nontemporal_load(&(src_bytes->z));
+	dst_bytes->w = __builtin_nontemporal_load(&(src_bytes->w));
+
+	dst_bytes++;
+	src_bytes++;
+	//__builtin_nontemporal_store(src_bytes->x, &dst_bytes->x);
+	//__builtin_nontemporal_store(src_bytes->y, &dst_bytes->y);
+	//__builtin_nontemporal_store(src_bytes->z, &dst_bytes->z);
+	//__builtin_nontemporal_store(src_bytes->w, &dst_bytes->w);
+	dst_bytes->x = __builtin_nontemporal_load(&(src_bytes->x));
+	dst_bytes->y = __builtin_nontemporal_load(&(src_bytes->y));
+	dst_bytes->z = __builtin_nontemporal_load(&(src_bytes->z));
+	dst_bytes->w = __builtin_nontemporal_load(&(src_bytes->w));
+#endif
+      }
+      size -= cpy_size * j;
+      dst_def += cpy_size * j;
+      src_def += cpy_size * j;
     }
-    size -= cpy_size * j;
-    dst_def += cpy_size * j;
-    src_def += cpy_size * j;
   }
 
+#if !defined(USE_FLOAT_FOUR)
   if (size == 1) {
+#endif
     if (is_thread_zero_in_block()) {
-      *dst_bytes = *src_bytes;
+      for (int i=0; i<size; i++) {
+	*dst_def = *src_def;
+	dst_def++;
+	src_def++;
+      }
     }
+#if !defined(USE_FLOAT_FOUR)
   }
+#endif
 }
 
 __device__ __forceinline__ void memcpy_wave(void* dst, void* src, size_t size) {
