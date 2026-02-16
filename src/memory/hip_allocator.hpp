@@ -56,6 +56,14 @@ enum HIPIpcHandleType {
   HandleTypeLast
 };
 
+enum HIPAllocatorType {
+  AllocatorTypeCoarsegrained = 0,
+  AllocatorTypeFinegrained,
+  AllocatorTypeUncached,
+  AllocatorTypeVMM,
+  AllocatorTypeLast
+};
+
 class HIPIpcHandleVec {
 public:
   virtual HIPIpcHandleType GetIpcHandleType() = 0;
@@ -92,6 +100,8 @@ class HIPAllocator : public MemoryAllocator {
                 hipError_t (*hip_free_fn)(void*), unsigned flags) :
     MemoryAllocator (hip_alloc_fn, hip_free_fn, flags) {}
 
+  HIPAllocatorType type = AllocatorTypeLast;
+
   hipError_t GetIpcHandle(void *dev_ptr, void *handle)
   {
     return hipIpcGetMemHandle(reinterpret_cast<hipIpcMemHandle_t *>(handle), dev_ptr);
@@ -124,14 +134,18 @@ class HIPAllocator : public MemoryAllocator {
 class HIPAllocatorCoarsegrained : public HIPAllocator {
  public:
   HIPAllocatorCoarsegrained()
-      : HIPAllocator(hipMalloc, hipFree) {}
+      : HIPAllocator(hipMalloc, hipFree) {
+    type = AllocatorTypeCoarsegrained;
+  }
 };
 
 class HIPAllocatorFinegrained : public HIPAllocator {
  public:
   HIPAllocatorFinegrained()
       : HIPAllocator(hipExtMallocWithFlags, hipFree,
-                     hipDeviceMallocFinegrained) {}
+                     hipDeviceMallocFinegrained) {
+    type = AllocatorTypeFinegrained;
+  }
 };
 
 #if defined HIP_SUPPORTS_MALLOC_UNCACHED
@@ -139,7 +153,9 @@ class HIPAllocatorUncached : public HIPAllocator {
  public:
   HIPAllocatorUncached()
       : HIPAllocator(hipExtMallocWithFlags, hipFree,
-                     hipDeviceMallocUncached) {}
+                     hipDeviceMallocUncached) {
+    type = AllocatorTypeUncached;
+  }
 };
 
 // The default fine-grained coherence allocator is the uncached allocator
@@ -149,28 +165,10 @@ using HIPDefaultFinegrainedAllocator = HIPAllocatorUncached;
 using HIPDefaultFinegrainedAllocator = HIPAllocatorFinegrained;
 #endif
 
-class HIPAllocatorManaged : public MemoryAllocator {
- public:
-  HIPAllocatorManaged()
-      : MemoryAllocator(hipMallocManaged, hipFree, hipMemAttachHost) {
-    _managed = true;
-  }
-};
-
 class HIPHostAllocator : public MemoryAllocator {
  public:
   HIPHostAllocator()
       : MemoryAllocator(hipHostMalloc, hipFree, hipHostMallocCoherent) {}
-};
-
-class HostAllocator : public MemoryAllocator {
- public:
-  HostAllocator() : MemoryAllocator(std::malloc, std::free) {}
-};
-
-class PosixAligned64Allocator : public MemoryAllocator {
- public:
-  PosixAligned64Allocator() : MemoryAllocator(posix_memalign, std::free, 64) {}
 };
 
 template <class T>
@@ -178,7 +176,10 @@ class StdAllocatorHIP {
  public:
   typedef T value_type;
 
-  StdAllocatorHIP() = default;
+  StdAllocatorHIP()
+  {
+    allocator_ = new HIPDefaultFinegrainedAllocator();
+  }
 
   template <class U>
   constexpr StdAllocatorHIP(const StdAllocatorHIP<U>&) noexcept

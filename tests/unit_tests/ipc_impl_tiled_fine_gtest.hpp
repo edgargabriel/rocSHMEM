@@ -149,7 +149,7 @@ kernel_tiled_fine_copy_warp(IpcImpl *ipc_impl, bool *error, int *golden, int *sr
 }
 
 class IPCImplTiledFine : public ::testing::TestWithParam<std::tuple<int, int, int>> {
-    using HEAP_T = HeapMemory<HIPDefaultFinegrainedAllocator>;
+    using HEAP_T = HeapMemoryType<HIPDefaultFinegrainedAllocator>;
     using MPI_T = RemoteHeapInfo<CommunicatorMPI>;
     using NotifierT = Notifier<detail::atomic::memory_scope_agent>;
     using NotifierProxyT = NotifierProxy<HIPAllocator, detail::atomic::memory_scope_agent>;

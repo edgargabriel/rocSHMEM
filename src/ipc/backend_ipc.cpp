@@ -422,7 +422,7 @@ void IPCBackend::setup_wrk_sync_buffers() {
    * Call into the hip runtime to get an IPC handle for the allocated
    * wrk_sync_pool_ buffer and store that IPC handle
    */
-  CHECK_HIP(fine_grained_allocator_->GetIpcHandle(ipc_handles->GetHandleVecElem(my_pe), wrk_sync_pool_));
+  CHECK_HIP(fine_grained_allocator_->GetIpcHandle(wrk_sync_pool_, ipc_handles->GetHandleVecElem(my_pe)));
 
   /*
    * all-to-all exchange with each PE to share the IPC handles.
