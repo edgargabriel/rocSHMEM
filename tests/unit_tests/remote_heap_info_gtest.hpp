@@ -30,7 +30,7 @@
 #include <mpi.h>
 
 #include "../src/memory/heap_memory.hpp"
-#include "../src/memory/hip_allocator.hpp"
+#include "../src/memory/std_allocator.hpp"
 #include "../src/memory/remote_heap_info.hpp"
 
 namespace rocshmem {

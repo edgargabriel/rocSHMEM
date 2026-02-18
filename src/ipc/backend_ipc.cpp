@@ -32,6 +32,7 @@
 #include "envvar.hpp"
 #include "ipc_team.hpp"
 #include "mpi_instance.hpp"
+#include "memory/default_allocator.hpp"
 
 namespace rocshmem {
 
@@ -112,12 +113,7 @@ IPCBackend::IPCBackend(TcpBootstrap *bootstrap):  Backend(bootstrap) {
 void IPCBackend::init() {
   ROCSHMEM_HOST_CTX_DEFAULT.ctx_opaque = default_host_ctx.get();
 
-  const char *arch_name = get_arch_name(hip_dev_id);
-  if (strncmp(arch_name, "gfx1201", strlen("gfx1201")) == 0) {
-    fine_grained_allocator_ = new HIPAllocatorFinegrained();
-  } else {
-    fine_grained_allocator_ = new HIPDefaultFinegrainedAllocator();
-  }
+  fine_grained_allocator_ = get_default_allocator();
 
   setup_team_world();
 
@@ -148,14 +144,6 @@ IPCBackend::~IPCBackend() {
   CHECK_HIP(hipFree(team_world));
 
   CHECK_HIP(hipFree(ctx_array));
-  if (fine_grained_allocator_) {
-    const char *arch_name = get_arch_name(hip_dev_id);
-    if (strncmp(arch_name, "gfx1201", strlen("gfx1201")) == 0) {
-      delete static_cast<HIPAllocatorFinegrained *>(fine_grained_allocator_);
-    } else {
-      delete static_cast<HIPDefaultFinegrainedAllocator *>(fine_grained_allocator_);
-    }
-  }
 }
 
 int IPCBackend::backend_can_run(MPI_Comm comm, TcpBootstrap* bootstrap) {
@@ -456,6 +444,8 @@ void IPCBackend::setup_wrk_sync_buffers() {
       wrk_sync_pool_bases_[i] = wrk_sync_pool_;
     }
   }
+
+  delete ipc_handles;
 }
 
 void IPCBackend::cleanup_wrk_sync_buffer() {

@@ -36,49 +36,21 @@
 #error "You need to have one of USE_ALLOC_DLMALLOC, USE_ALLOC_POW2BINS set to ON"
 #endif
 
-#include "hip_allocator.hpp"
+#include "default_allocator.hpp"
 
 namespace rocshmem {
 
+HIPAllocator *default_allocator_{nullptr};
+
 SingleHeap::SingleHeap() {
 
-  int hip_dev_id{};
-  CHECK_HIP(hipGetDevice(&hip_dev_id));
-  printf("Got device_id %d\n", hip_dev_id);
-  std::string heap_mem_type = envvar::heap_mem_type;
-
-  if (heap_mem_type.empty()) {
-    // Note: not using get_arch_name(hip_dev_id) from ../util.cpp because 
-    // the required data structure are not being initialized in the unit tests.
-    char arch_name[256];
-    hipDeviceProp_t prop;
-    CHECK_HIP(hipGetDeviceProperties(&prop, hip_dev_id));
-    std::snprintf(arch_name, sizeof(arch_name), "%s",prop.gcnArchName);
-
-    if (strncmp(arch_name, "gfx1201", strlen("gfx1201")) == 0) {
-      heap_mem_ = new HeapMemoryType<HIPAllocatorFinegrained>(envvar::heap_size.get_value());
-    } else {
-#if defined HIP_SUPPORTS_MALLOC_UNCACHED
-      heap_mem_ = new HeapMemoryType<HIPAllocatorUncached>(envvar::heap_size.get_value());
-#else
-      heap_mem_ = new HeapMemoryType<HIPAllocatorFinegrained>(envvar::heap_size.get_value());
-#endif
-    }
-  } else {
-    if (heap_mem_type.compare("coarsegrained") == 0) {
-      heap_mem_ = new HeapMemoryType<HIPAllocatorCoarsegrained>(envvar::heap_size.get_value());
-    }
-    else if (heap_mem_type.compare("finegrained") == 0) {
-      heap_mem_ = new HeapMemoryType<HIPAllocatorFinegrained>(envvar::heap_size.get_value());
-    }
-    else if (heap_mem_type.compare("uncached") == 0) {
-#if defined HIP_SUPPORTS_MALLOC_UNCACHED
-      heap_mem_ = new HeapMemoryType<HIPAllocatorUncached>(envvar::heap_size.get_value());
-#else
-      printf("Uncached Heap memory type requested, but ROCm version does not support Uncached memory. Aborting.\n");
-      abort();
-#endif
-    }
+  HIPAllocator *allocator = get_default_allocator();
+  if (allocator->type == AllocatorTypeCoarsegrained) {
+    heap_mem_ = new HeapMemoryType<HIPAllocatorCoarsegrained>(envvar::heap_size.get_value());
+  } else if (allocator->type == AllocatorTypeFinegrained) {
+    heap_mem_ = new HeapMemoryType<HIPAllocatorFinegrained>(envvar::heap_size.get_value());
+  } else if (allocator->type == AllocatorTypeUncached) {
+    heap_mem_ = new HeapMemoryType<HIPAllocatorUncached>(envvar::heap_size.get_value());
   }
   assert(heap_mem_ != nullptr);
 
@@ -90,7 +62,6 @@ SingleHeap::SingleHeap() {
   } else if (heap_mem_->type_ == AllocatorTypeUncached){
     strat_ = new DLAllocatorStrategy<HeapMemoryType<HIPAllocatorUncached>>(reinterpret_cast<HeapMemoryType<HIPAllocatorUncached> *>(heap_mem_));
   }
-
 #elif defined USE_ALLOC_POW2BINS
   /**
    * @brief Helper type for address records

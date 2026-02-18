@@ -40,13 +40,6 @@
 #include <limits>
 #include <vector>
 
-// `hipDeviceMallocUncached` was introduced at ROCm 5.5
-#if (HIP_VERSION_MAJOR > 5) || \
-    (HIP_VERSION_MAJOR == 5 && HIP_VERSION_MINOR >= 5)
-#define HIP_SUPPORTS_MALLOC_UNCACHED
-#elif defined USE_HEAP_DEVICE_UNCACHED
-#error "USE_HEAP_DEVICE_UNCACHED unsupported in this HIP version"
-#endif
 namespace rocshmem {
 
 enum HIPIpcHandleType {
@@ -66,9 +59,10 @@ enum HIPAllocatorType {
 
 class HIPIpcHandleVec {
 public:
+  virtual ~HIPIpcHandleVec() = default;
+
   virtual HIPIpcHandleType GetIpcHandleType() = 0;
   virtual void* GetHandleVecElem(int elem) = 0;
-
 };
 
 class HIPIpcHandleLegacyVec : public HIPIpcHandleVec {
@@ -148,7 +142,7 @@ class HIPAllocatorFinegrained : public HIPAllocator {
   }
 };
 
-#if defined HIP_SUPPORTS_MALLOC_UNCACHED
+#if defined HAVE_DEVICE_MALLOC_UNCACHED
 class HIPAllocatorUncached : public HIPAllocator {
  public:
   HIPAllocatorUncached()
@@ -157,12 +151,6 @@ class HIPAllocatorUncached : public HIPAllocator {
     type = AllocatorTypeUncached;
   }
 };
-
-// The default fine-grained coherence allocator is the uncached allocator
-using HIPDefaultFinegrainedAllocator = HIPAllocatorUncached;
-#else
-// The default fine-grained coherence allocator is the fine-grained allocator
-using HIPDefaultFinegrainedAllocator = HIPAllocatorFinegrained;
 #endif
 
 class HIPHostAllocator : public MemoryAllocator {
@@ -170,54 +158,6 @@ class HIPHostAllocator : public MemoryAllocator {
   HIPHostAllocator()
       : MemoryAllocator(hipHostMalloc, hipFree, hipHostMallocCoherent) {}
 };
-
-template <class T>
-class StdAllocatorHIP {
- public:
-  typedef T value_type;
-
-  StdAllocatorHIP()
-  {
-    allocator_ = new HIPDefaultFinegrainedAllocator();
-  }
-
-  template <class U>
-  constexpr StdAllocatorHIP(const StdAllocatorHIP<U>&) noexcept
-  {
-    allocator_ = new HIPDefaultFinegrainedAllocator();
-  }
-
-  [[nodiscard]] T* allocate(size_t n) {
-    if (n > std::numeric_limits<size_t>::max() / sizeof(T)) {
-      throw std::bad_array_new_length();
-    }
-
-    T* p{nullptr};
-    allocator_->allocate(reinterpret_cast<void**>(&p), n * sizeof(T));
-    if (p) {
-      return p;
-    }
-
-    throw std::bad_alloc();
-  }
-
-  void deallocate(T* p, [[maybe_unused]] size_t n) noexcept {
-    allocator_->deallocate(p);
-  }
-
- private:
-  HIPAllocator *allocator_{nullptr};
-};
-
-template <class T, class U>
-bool operator==(const StdAllocatorHIP<T>&, const StdAllocatorHIP<U>&) {
-  return true;
-}
-
-template <class T, class U>
-bool operator!=(const StdAllocatorHIP<T>&, const StdAllocatorHIP<U>&) {
-  return false;
-}
 
 }  // namespace rocshmem
 
